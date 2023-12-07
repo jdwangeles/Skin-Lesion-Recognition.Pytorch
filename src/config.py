@@ -94,6 +94,8 @@ class Config:
         # self.parser.add_argument("--warmup_epochs", default=-1, type=int,
         #                          help="epochs to use warm up")
 
+        self.parser.add_argument("-f", "--fff", help="a dummy argument to fool ipython", default="1")
+
     def _add_customized_setting(self):
         """Add customized setting
         """
