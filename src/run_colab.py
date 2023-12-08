@@ -6,7 +6,7 @@ def exp_035():
     runner.n_epochs = 1
     runner.batch_size = 14
     runner.server = "lab_center"
-    runner.eval_frequency = 10
+    runner.eval_frequency = 3
     runner.backbone = "PNASNet5Large"
     runner.learning_rate = 1e-4
     runner.optimizer = "SGD"
@@ -17,7 +17,9 @@ def exp_035():
     runner.iter_fold = 1
     runner.seed = 47
     runner.disable_save = True
+    runner.exp = 35
     # runner.resume = 0
+    runner.model_dir = ("isic2018_models")
     runner.train()
 
 if __name__ == "__main__":

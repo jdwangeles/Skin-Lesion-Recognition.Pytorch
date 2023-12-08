@@ -5,6 +5,7 @@
 
 import torch
 import datetime
+import time
 import os
 import sys
 import torch.nn as nn
@@ -51,6 +52,7 @@ class trainer():
         tf_log = os.path.join(log_dir, self.exp)
         self.writer = SummaryWriter(log_dir=tf_log)
         self.net = None
+        self.epoch = 99
 
     def train(self):
         init_environment(seed=self.seed, cuda_id=self.cuda_ids)
@@ -91,6 +93,7 @@ class trainer():
             ])
 
         input_channel = 3
+        print(f'using iter_fold {self.iter_fold}')
         trainset = dataset.Skin7(root="./data/", iter_fold=self.iter_fold, train=True,
                                  transform=self.train_transform)
         valset = dataset.Skin7(root="./data/", iter_fold=self.iter_fold, train=False,
@@ -154,9 +157,9 @@ class trainer():
             sys.exit(-1)
 
         start_epoch = 0
-        if self.resume:
+        if self.resume is not None and self.resume != "":
             self._print("=> Resume from model at epoch {}".format(self.resume))
-            self.resume_path = os.path.join(self.model_dir, str(self.exp), str(self.resume))
+            self.resume_path = os.path.join(self.model_dir, str(self.exp), str(f'Task3_{self.backbone}_{self.exp}_{self.resume}.pt'))
             ckpt = torch.load(self.resume_path)
             self.net.load_state_dict(ckpt)
             start_epoch = self.resume + 1
@@ -169,6 +172,7 @@ class trainer():
         sota["mcr"] = -1.0
 
         for epoch in range(start_epoch+1, self.n_epochs+1):
+            self.epoch = epoch
             self.net.train()
             losses = []
             for batch_idx, (data, target) in enumerate(trainloader):
@@ -185,67 +189,117 @@ class trainer():
                 print(f'time = {datetime.datetime.now() - start}\n')
                 losses.append(loss.item())
 
-                print(f'self.eval_frequency = {self.eval_frequency}')
-                if batch_idx % self.eval_frequency == 0 and not self.disable_save:
-                    print(f'evaling')
-                    # print to log
-                    dicts = {
-                        "epoch": epoch, "n_epochs": self.n_epochs, "loss": loss.item()
-                    }
-                    print_loss_sometime(dicts, _print=self._print)
+            print(f'self.eval_frequency = {self.eval_frequency}')
+            if epoch != 0 and epoch % self.eval_frequency == 0:
+                print(f'evaling')
+                # print to log
+                dicts = {
+                    "epoch": epoch, "n_epochs": self.n_epochs, "loss": loss.item()
+                }
+                # print_loss_sometime(dicts, _print=self._print)
+                print(f'loss = {loss.item()}')
 
-                    train_avg_loss = np.mean(losses)
-                    if scheduler is not None:
-                        scheduler.step(train_avg_loss)
+                train_avg_loss = np.mean(losses)
+                if scheduler is not None:
+                    scheduler.step(train_avg_loss)
 
-                    self.writer.add_scalar("Lr", get_lr(opt), epoch)
-                    self.writer.add_scalar("Loss/train/", train_avg_loss, epoch)
+                self.writer.add_scalar("Lr", get_lr(opt), epoch)
+                self.writer.add_scalar("Loss/train/", train_avg_loss, epoch)
 
-                    self.net.eval()
-                    y_true = []
-                    y_pred = []
-                    for _, (data, target) in enumerate(trainloader):
-                        data = data.to(self.device)
-                        predict = torch.argmax(self.net(data), dim=1).cpu().data.numpy()
-                        y_pred.extend(predict)
-                        target = target.cpu().data.numpy()
-                        y_true.extend(target)
+                self.net.eval()
+                y_true = []
+                y_pred = []
+                for _, (data, target) in enumerate(trainloader):
+                    data = data.to(self.device)
+                    predict = torch.argmax(self.net(data), dim=1).cpu().data.numpy()
+                    y_pred.extend(predict)
+                    target = target.cpu().data.numpy()
+                    y_true.extend(target)
 
-                    acc = accuracy_score(y_true, y_pred)
-                    mcr = mean_class_recall(y_true, y_pred)
-                    self._print("=> Epoch:{} - train acc: {:.4f}".format(epoch, acc))
-                    self._print("=> Epoch:{} - train mcr: {:.4f}".format(epoch, mcr))
-                    self.writer.add_scalar("Acc/train/", acc, epoch)
-                    self.writer.add_scalar("Mcr/train/", mcr, epoch)
+                acc = accuracy_score(y_true, y_pred)
+                mcr = mean_class_recall(y_true, y_pred)
+                self._print("=> Epoch:{} - train acc: {:.4f}".format(epoch, acc))
+                self._print("=> Epoch:{} - train mcr: {:.4f}".format(epoch, mcr))
+                self.writer.add_scalar("Acc/train/", acc, epoch)
+                self.writer.add_scalar("Mcr/train/", mcr, epoch)
 
-                    y_true = []
-                    y_pred = []
-                    for _, (data, target) in enumerate(valloader):
-                        data = data.to(self.device)
-                        predict = torch.argmax(self.net(data), dim=1).cpu().data.numpy()
-                        y_pred.extend(predict)
-                        target = target.cpu().data.numpy()
-                        y_true.extend(target)
+                y_true = []
+                y_pred = []
+                for _, (data, target) in enumerate(valloader):
+                    data = data.to(self.device)
+                    predict = torch.argmax(self.net(data), dim=1).cpu().data.numpy()
+                    y_pred.extend(predict)
+                    target = target.cpu().data.numpy()
+                    y_true.extend(target)
 
-                    acc = accuracy_score(y_true, y_pred)
-                    mcr = mean_class_recall(y_true, y_pred)
-                    self._print("=> Epoch:{} - val acc: {:.4f}".format(epoch, acc))
-                    self._print("=> Epoch:{} - val mcr: {:.4f}".format(epoch, mcr))
-                    self.writer.add_scalar("Acc/val/", acc, epoch)
-                    self.writer.add_scalar("Mcr/val/", mcr, epoch)
+                acc = accuracy_score(y_true, y_pred)
+                mcr = mean_class_recall(y_true, y_pred)
+                self._print("=> Epoch:{} - val acc: {:.4f}".format(epoch, acc))
+                self._print("=> Epoch:{} - val mcr: {:.4f}".format(epoch, mcr))
+                self.writer.add_scalar("Acc/val/", acc, epoch)
+                self.writer.add_scalar("Mcr/val/", mcr, epoch)
 
-                    # Val acc
-                    if mcr > sota["mcr"]:
-                        sota["mcr"] = mcr
-                        sota["epoch"] = epoch
-                        model_path = os.path.join(self.model_dir, str(self.exp), str(epoch))
-                        self._print("=> Save model in {}".format(model_path))
-                        net_state_dict = self.net.state_dict()
+                # Val acc
+                if mcr > sota["mcr"]:
+                    sota["mcr"] = mcr
+                    sota["epoch"] = epoch
+                    model_path = os.path.join(self.model_dir, str(self.exp), str(f'Task3_{self.backbone}_{self.exp}_{epoch}.pt'))
+                    if os.path.exists(model_path):
+                        model_path = os.path.join(self.model_dir,
+                                                  str(self.exp),
+                                                  str(f'Task3_{self.backbone}_{self.exp}_{epoch}_{time.time()}.pt'))
+                    self._print("=> Save model in {}".format(model_path))
+                    net_state_dict = self.net.state_dict()
+                    if not self.disable_save:
+                        self._print(f'SAVING TO {model_path}')
                         torch.save(net_state_dict, model_path)
+                    else:
+                        self._print(f'SAVING IS DISABLED! MAKE SURE TO SAVE!')
 
         self._print("=> Finish Training")
         self._print("=> Best epoch {} with {} on Val: {:.4f}".format(sota["epoch"],
                                                                 "sota",
                                                                 sota["mcr"]))
+    def write(self, model_path):
+        self.net.eval()
+        if not model_path:
+            model_path = os.path.join(self.model_dir, str(self.exp), str(f'Task3_{self.backbone}_{self.exp}_{self.epoch}.pt'))
+        if os.path.exists(model_path):
+            model_path = os.path.join(self.model_dir,
+                                      str(self.exp),
+                                      str(f'Task3_{self.backbone}_{self.exp}_{self.epoch}_{time.time()}.pt'))
+        net_state_dict = self.net.state_dict()
+        torch.save(net_state_dict, model_path)
+
+    def load(self, path):
+        self.net = model.Network(backbone=self.backbone, num_classes=self.num_classes,
+                                 input_channel=3, pretrained=self.initialization)
+        ckpt = torch.load(path)
+        self.net.load_state_dict(ckpt)
+
+    def test(self, count=10):
+        self.net.eval()
+        import pandas as pd
+        csvfile = pd.read_csv('../ISIC2018_Task3_Test_Input/ISIC2018_Task3_Test_GroundTruth.csv')
+        raw_data = csvfile.values
+
+        with torch.no_grad():
+            for idx in np.random.choice(raw_data.shape[0], count, replace=True):
+                data = raw_data[idx][0]
+                try:
+                    target = np.where(raw_data[idx][1:] == 1.0)[0][0]
+                except Exception as e:
+                    print(f'err getting target for {data}, raw = {raw_data}')
+                    print(repr(e))
+                    continue
+                img = dataset.pil_loader(f'../ISIC2018_Task3_Test_Input/{data}.jpg')
+                img = self.val_transform(img)
+                img = torch.unsqueeze(img, 0)
+                predict = torch.argmax(self.net(img), dim=1).cpu().data.numpy()
+                if predict == target:
+                    print(f'{data} correctly predicted {predict}')
+                else:
+                    print(f'{data} INCORRECTLY predicted {predict}, true answer = {target}')
+
 if __name__ == "__main__":
     trainer().train()
